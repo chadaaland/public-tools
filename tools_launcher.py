@@ -17,16 +17,14 @@ Launch button per tool, plus a one-click "set up dependencies" button. It
 shells out to each tool's existing entry point, so every tool keeps its own
 behavior -- the launcher just saves you from hunting for the right .bat.
 
-Stdlib only (tkinter / subprocess / webbrowser); no third-party dependencies
-of its own. Double-click Tools.bat, or run `python tools_launcher.py`.
+Stdlib only (tkinter / subprocess); no third-party dependencies of its own.
+Double-click Tools.bat, or run `python tools_launcher.py`.
 """
 from __future__ import annotations
 
 import os
 import subprocess
 import sys
-import threading
-import webbrowser
 from pathlib import Path
 
 import tkinter as tk
@@ -128,9 +126,10 @@ def launch_tool(tool: dict, status=None) -> None:
         messagebox.showerror("Launch failed", f"{tool['name']}:\n{exc}")
         return
     if tool["kind"] == "flask":
-        threading.Timer(2.5, lambda: webbrowser.open(tool["url"])).start()
+        # The Flask app opens its own browser tab on startup, so the launcher
+        # does NOT open one (doing both gave two tabs).
         if status:
-            status(f"Starting {tool['name']} -- opening {tool['url']}")
+            status(f"Starting {tool['name']} -- it will open in your browser ({tool['url']}).")
     elif tool["kind"] == "folder":
         if status:
             status(f"Launched {tool['name']} on {target}")
