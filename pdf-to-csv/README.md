@@ -12,30 +12,45 @@ each detected table before writing.
      and financial tables with explicit grid lines)
    - Fallback: `pdfplumber`'s text-clustering detector (handles unruled
      tables where rows/cols are inferred from text positioning)
-3. **Stitch continuations:** consecutive pages with an identical header
-   row are merged into a single CSV (handles multi-page tables)
+   - Scanned / image-only PDFs (no text layer) are **OCR'd automatically**
+     with Tesseract, then the grid is rebuilt from word positions (requires
+     the Tesseract engine installed; `pytesseract`/`Pillow` are auto-installed
+     on first use)
+3. **Stitch continuations:** consecutive pages whose header rows match are
+   merged into a single CSV. The match is **fuzzy** — a repeated header that
+   the detector chops at different positions page to page (so the cell splits,
+   and even the column count, drift) still stitches, with rows padded to a
+   common width. This is what keeps a long paginated report from fragmenting
+   into one CSV per page.
 4. **Show a preview dialog** with every detected table — scroll through,
    confirm the detection looks right, then save
-5. **Save** as one CSV per table (or a single CSV if only one was detected)
-   in the same folder as the source PDF
+5. **Save** as one CSV per detected table (or a single CSV if only one was
+   detected) in the same folder as the source PDF
 
 ## Best for
 
 - Financial statements, bank statements, brokerage reports
 - Anything with explicit ruled grid lines (where pymupdf's vector detector excels)
-- Multi-page tables with repeating headers
+- Multi-page tables with repeating headers (now tolerant of header chopping)
 - Quick one-off conversions when you'd otherwise be copy/pasting cells
 
 ## Not great for
 
 - Complex nested or merged-cell layouts
+- **Form-style layouts that aren't true grids** — label/value forms or
+  multi-column "vendor card" reports where each record spans several lines.
+  These aren't tables, so the column detector will split text at odd
+  positions (e.g. a name as `Western Wholesa` | `le Sup` | `ply, In` | `c`)
+  no matter how stitching is tuned. For data like that, a purpose-built
+  extractor that knows the layout is the right tool, not a generic converter.
 - Tables with no grid lines AND no consistent text alignment
-- Image-only / scanned PDFs (this tool does no OCR — see `w9-catchup` if you need OCR)
 
 ## Prerequisites
 
 - **Python 3.8+**
 - The dependencies in `requirements.txt`
+- Optional: the [Tesseract engine](https://github.com/UB-Mannheim/tesseract/wiki)
+  for OCR of scanned PDFs
 
 ## Setup
 
@@ -70,27 +85,37 @@ passes the PDF path as `sys.argv[1]` — same as the command-line form.
 
 ## External connections
 
-**None.** Fully local. No network calls, no cloud services.
+**None.** Fully local. No network calls, no cloud services. (OCR, when used,
+runs against your locally installed Tesseract engine.)
 
 ## Output
 
-For a PDF named `report.pdf` containing 3 detected tables, you get:
+For a PDF named `report.pdf`:
 
-- `report - Table 1.csv`
-- `report - Table 2.csv`
-- `report - Table 3.csv`
-
-(Or just `report.csv` if only one table was detected.)
+- If a single table is detected (the usual case for a paginated report that
+  stitches cleanly), you get `report.csv`.
+- If multiple distinct tables are detected, you get one file each:
+  `report_table01.csv`, `report_table02.csv`, `report_table03.csv`, …
 
 Files are written to the same folder as the source PDF.
+
+## Tests
+
+```powershell
+cd pdf-to-csv
+python -m pytest -q
+```
+
+`test_pdf_to_csv.py` covers the continuation-stitching logic, including the
+fuzzy header match that prevents a paginated report from fragmenting.
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
-| "No tables detected" on a PDF that obviously has tables | The tables are probably image-based (a scanned PDF). This tool doesn't OCR. Either OCR first with a separate tool, or use `w9-catchup`'s extractor as a reference for adding OCR support. |
-| Detected table is split awkwardly across rows | pymupdf's grid detector misread the cell boundaries. Edit the resulting CSV manually, or try opening the PDF in a tool like Tabula for a different detection algorithm. |
-| Multi-page table not stitched | The header row text isn't identical across pages (Page 1 says "Vendor Name", Page 2 says "Vendor name"). Adjust the header in the source PDF if possible, or merge CSVs manually post-export. |
+| "No tables detected" on a scanned PDF | Scanned PDFs are OCR'd automatically, but that needs the Tesseract engine installed (see link under Prerequisites). Without it, a scan yields no tables. |
+| Detected table is split awkwardly across columns | The text-clustering detector misread cell boundaries. This is expected for form-style layouts that aren't true grids (see "Not great for"). Edit the CSV, or use a layout-aware extractor. |
+| A paginated report came out as many CSVs | Fixed: continuation pages now stitch via fuzzy header matching. If it still splits, the pages' headers differ by more than the similarity threshold — they may genuinely be different tables. |
 | Preview dialog cut off / unreadable | Resize the window. The dialog uses tkinter's default sizing which can be cramped on small displays. |
 | Crash with `ModuleNotFoundError` | `pip install -r requirements.txt` wasn't run, or you're in the wrong virtualenv. |
 

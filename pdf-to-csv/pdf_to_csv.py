@@ -15,7 +15,10 @@ PDF -> CSV table extractor.
 
 Uses pymupdf's vector-aware table finder (accurate for ruled/financial
 tables), with pdfplumber text-clustering as a fallback for unruled tables.
-Consecutive pages with an identical header row are stitched into one table.
+Consecutive pages whose header rows match -- exactly, or closely enough to
+absorb the column-chopping/width drift the finder produces page to page --
+are stitched into one table (so a paginated report becomes one CSV, not one
+CSV per page).
 
 A preview dialog shows every detected table before saving so
 misreads can be caught.
@@ -28,6 +31,7 @@ import csv
 import sys
 import tkinter as tk
 import traceback
+from difflib import SequenceMatcher
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -266,18 +270,66 @@ def _looks_like_table(rows: Table) -> bool:
     return True
 
 
+# A repeated report header on continuation pages often chops at slightly
+# different x-positions page to page, so the cell splits -- and the detected
+# column count -- drift.  That made an exact `tbl[0] == prev[0]` test fail on
+# every page and fragmented a single report into one CSV per page (e.g. a
+# 458-page vendor report came out as 301 separate CSVs).  We additionally treat
+# a continuation as a match when the header rows are *nearly* identical after
+# normalizing whitespace, tolerating the column-count drift by padding to a
+# common width.
+_HEADER_SIM_THRESHOLD = 0.88
+
+
+def _norm_header(row: list[str]) -> str:
+    """Flatten a header row to one whitespace-normalized string for fuzzy
+    comparison, so cosmetic chopping differences don't defeat the match."""
+    return " ".join(" ".join((c or "").split()) for c in row).strip().lower()
+
+
+def _header_similarity(a: list[str], b: list[str]) -> float:
+    """0..1 similarity of two header rows, ignoring whitespace and chopping."""
+    na, nb = _norm_header(a), _norm_header(b)
+    if not na or not nb:
+        return 0.0
+    return SequenceMatcher(None, na, nb).ratio()
+
+
+def _concat_padded(prev: Table, rows: list[list[str]]) -> Table:
+    """Concatenate two row-sets, right-padding every row to a common width so
+    tables whose detected column count drifted still line up in one CSV."""
+    width = max([len(r) for r in prev] + [len(r) for r in rows], default=0)
+    pad = lambda r: r + [""] * (width - len(r))
+    return [pad(r) for r in prev] + [pad(r) for r in rows]
+
+
 def _stitch_continuations(tables: list[Table]) -> list[Table]:
-    """Merge tables on consecutive pages that share the same header row."""
+    """Merge tables on consecutive pages that are continuations of one report.
+
+    A continuation is detected by (a) an identical repeated header row, (b) a
+    headerless data page with the same column count, or (c) a header row that
+    is *nearly* identical to the previous table's -- so a report whose header
+    chops differently page to page stitches into a single table instead of
+    fragmenting into one CSV per page."""
     if not tables:
         return tables
     merged: list[Table] = [tables[0]]
     for tbl in tables[1:]:
         prev = merged[-1]
-        if tbl and prev and tbl[0] == prev[0] and len(tbl[0]) == len(prev[0]):
-            merged[-1] = prev + tbl[1:]  # drop duplicated header
-        elif tbl and prev and len(tbl[0]) == len(prev[0]) and _is_numeric_row(tbl[0]):
+        if not (tbl and prev):
+            merged.append(tbl)
+            continue
+        same_width = len(tbl[0]) == len(prev[0])
+        if same_width and tbl[0] == prev[0]:
+            merged[-1] = prev + tbl[1:]  # exact duplicated header -> drop it
+        elif same_width and _is_numeric_row(tbl[0]):
             # Same column count, first row is data (no header repeated) -> append
             merged[-1] = prev + tbl
+        elif _header_similarity(tbl[0], prev[0]) >= _HEADER_SIM_THRESHOLD:
+            # Same report continuing, but the header chopped differently and/or
+            # the column count drifted -> pad to a common width, drop the
+            # repeated header row, and stitch into the running table.
+            merged[-1] = _concat_padded(prev, tbl[1:])
         else:
             merged.append(tbl)
     return merged
