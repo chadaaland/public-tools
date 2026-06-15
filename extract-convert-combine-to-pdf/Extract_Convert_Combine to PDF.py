@@ -318,7 +318,12 @@ def combine_folder_into_pdf(folder: Path, output_path: Path):
 
 def main():
     ensure_dependencies()
-    folder = Path(__file__).resolve().parent
+    # Folder to process: an optional command-line argument (used by the
+    # Tools launcher to target a chosen receipts folder), otherwise the
+    # folder this script lives in -- the original "drop the script in the
+    # folder and double-click" behavior, unchanged.
+    folder = (Path(sys.argv[1]).resolve() if len(sys.argv) > 1
+              else Path(__file__).resolve().parent)
     print(f"Working folder:\n  {folder}\n")
 
     # Step 0: .msg attachment extraction

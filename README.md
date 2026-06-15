@@ -5,7 +5,7 @@ Each tool is self-contained in its own subfolder with its own README.
 
 ## Prerequisite: install Python
 
-All four tools are written in Python. Before running any of them, you
+All of these tools are written in Python. Before running any of them, you
 need Python 3.10 or newer installed.
 
 If `python --version` in a terminal returns something like `Python 3.12.4`,
@@ -23,6 +23,15 @@ you're already set. If not, install one of two ways:
 4. Open a fresh terminal and verify with `python --version`
 
 `pip` (Python's package installer) is bundled with Python, so you don't need to install it separately.
+
+## Quick start: the launcher
+
+If you'd rather not hunt for each tool's `.bat`, double-click **`Tools.bat`**
+(or run `python tools_launcher.py`) in this folder. It opens a small window
+with a **Launch** button for every tool, plus a **Set up / update
+dependencies** button that pip-installs each tool's requirements in one shot.
+The launcher is stdlib-only (tkinter); it just starts each tool's normal
+entry point, so every tool behaves exactly as it does on its own.
 
 ## Tools
 
