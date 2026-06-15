@@ -86,7 +86,9 @@ def _launch_command(tool: dict, target: str | None = None) -> tuple[list[str], s
         # The script reads its target from argv[1]; run it from that folder.
         return ([_python_exe(), str(script), target], target)
     if kind == "flask":
-        return ([_python_exe(), str(script)], str(script.parent))
+        # windowless: the server runs in the background and the browser opens,
+        # so there's no console for a non-technical user to puzzle over.
+        return ([_python_exe(windowless=True), str(script)], str(script.parent))
     # filepicker (and default): the script opens its own dialog
     return ([_python_exe(windowless=True), str(script)], str(script.parent))
 
@@ -200,7 +202,28 @@ def build_ui() -> tk.Tk:
     return root
 
 
+def _relaunch_windowless_if_needed() -> None:
+    """On Windows, being started via python.exe carries a console window that
+    lingers behind the GUI and confuses non-technical users. If that's how we
+    were started, relaunch under pythonw.exe (no console) and exit. No-op when
+    already windowless, when pythonw can't be found, or on non-Windows."""
+    if os.name != "nt":
+        return
+    exe = Path(sys.executable)
+    if exe.name.lower() != "python.exe":
+        return  # already pythonw / embedded -> no console to shed
+    pyw = exe.with_name("pythonw.exe")
+    if not pyw.exists():
+        return  # nothing to relaunch with; run as-is
+    try:
+        subprocess.Popen([str(pyw), os.path.abspath(__file__), *sys.argv[1:]])
+    except Exception:
+        return  # fall through and run with the console rather than not at all
+    sys.exit(0)
+
+
 def main() -> None:
+    _relaunch_windowless_if_needed()
     build_ui().mainloop()
 
 
